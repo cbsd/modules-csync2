@@ -1,0 +1,19 @@
+	host cloudbsd1.my.domain;
+	host cloudbsd2.my.domain;
+
+	include /usr/jails/jails-data/repl1-data;
+	include /usr/jails/jails-system/repl1/csync2.cfg;
+	exclude /usr/jails/jails-data/repl1-data/var/spool/clientmqueue;
+	exclude /usr/jails/jails-data/repl1-data/var/log/*.log;
+	exclude /usr/jails/jails-data/repl1-data/var/log/*/*.log;
+	exclude /usr/jails/jails-data/var/run;
+
+	action
+	{
+		pattern /usr/jails/jails-data/repl1-data/usr/local/etc/nginx/*;
+		exec "/usr/local/bin/cbsd service jname=repl1 mode=action nginx reload";
+		logfile "/usr/jails/jails-system/repl1/csync2.actions.log";
+		do-local;
+	}
+
+	auto younger;

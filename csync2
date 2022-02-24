@@ -1,0 +1,188 @@
+#!/usr/local/bin/cbsd
+# todo: frequency of csync2 per jail via ~cbsd/jails-system/<jail>/etc/csync2.conf
+MYARG=""
+MYOPTARG="verbose"
+MYDESC="CBSD wrapper for csync2"
+CBSDMODULE="jail"
+ADDHELP="
+${H3_COLOR}Description${N0_COLOR}:
+
+Csync2 is a cluster synchronization tool. It can be used to keep files on
+multiple hosts in a cluster in sync. Csync2 can handle complex setups with
+much more than just 2 hosts, handle file deletions and can detect
+conflicts.
+
+CBSD csync2 module is a wrapper script that makes it easy to set up synchronization 
+of CBSD containers. 
+
+In order to mark a jail as synchronized via csync2 just create csync2-group part in
+~cbsd/jails-system/<jail>/csync2.cfg
+
+See example for 'repl1' jail in: /usr/local/cbsd/modules/csync2.d/etc/csync2.cfg-sample
+
+CBSD csync2 module scans for ~cbsd/jails-system/<jail>/csync2.cfg and (re-)build 
+resulting config file in the usual place: /usr/local/etc/csync2.cfg.
+
+Also you need to enable csync2 daemon on all nodes via (as root):
+
+# service csync2 enable
+
+Limitation:
+
+Since synchronization works at the host level, at the moment we can only synchronize the 
+same paths - on all hosts, the CBSD working directory and the name of the synchronized 
+containers must match. E.g.:
+
+node-1                                          node-2
+ -----                                         -----
+|     |                                       |     |
+|   /usr/jails/jails-data/repl1-data   ---> /usr/jails/jails-data/repl1-data
+|     |                                       |     |
+|   /usr/jails/jails-data/repl2-data   ---> /usr/jails/jails-data/repl2-data
+|     |                                       |     |
+ -----                                         -----
+
+Also you need to init/bootstrap csync2 on one node and distribute the key to other 
+servers manually.
+
+Module use ~cbsd/etc/csync2.conf for global settins and can be overwritten per jail
+(e.g. set individual CSYNC2_CBSD_RUN_INTERVAL= for each jail ).
+
+Please copy and edit /usr/local/cbsd/modules/csync2.d/etc/csync2.conf to ~cbsd/etc/ first.
+
+Insert into `crontab -e` csync2 executor:
+
+* * * * * /usr/bin/lockf -s -t0 /tmp/cbsd_csync2.lock /usr/bin/env NOCOLOR=1 /usr/local/bin/cbsd csync2 >> /var/log/cbsd-csync2/csync2.log 2>&1
+
+${H3_COLOR}Options${N0_COLOR}:
+
+ ${N2_COLOR}verbose${N0_COLOR}  - set to '1' to see verbose output.
+
+${H3_COLOR}Examples${N0_COLOR}:
+
+ # cbsd csync2 verbose=1
+
+URL: https://www.bsdstore.ru/en/13.0.x/wf_csync_ssi.html
+"
+
+EXTHELP=
+
+. ${subr}
+
+verbose=0
+overbose=
+. ${cbsdinit}
+if [ -n "${verbose}" ]; then
+	overbose="${verbose}"
+	CSYNC2_CBSD_VERBOSE="${verbose}"
+else
+	CSYNC2_CBSD_VERBOSE=0
+fi
+
+. ${system}
+. ${strings}
+
+# read globals
+readconf csync2.conf
+[ -n "${overbose}" ] && CSYNC2_CBSD_VERBOSE="${overbose}"
+
+# should be early
+[ ! -d ${CSYNC2_CBSD_LOG_DIR} ] && ${MKDIR_CMD} -p ${CSYNC2_CBSD_LOG_DIR}
+[ ! -h "${dbdir}/local.sqlite" ] && exit 0
+[ ! -x "${CSYNC2_CMD}" ] && err 1 "${N1_COLOR}no such csync2 executable, please install first: ${N2_COLOR}pkg install -y csync2${N0_COLOR}"
+[ -z "${CSYNC2_CBSD_RUN_INTERVAL}" ] && CSYNC2_CBSD_RUN_INTERVAL="10"
+
+jails=$( ${miscdir}/sqlcli ${dbdir}/local.sqlite "SELECT jname FROM jails WHERE emulator = \"jail\"" )
+csync_jails=
+
+for i in ${jails}; do
+	if [ -r ${jailsysdir}/${i}/csync2.cfg ]; then
+		if [ -z "${csync_jails}" ]; then
+			csync_jails="${i}"
+		else
+			csync_jails="${csync_jails} ${i}"
+		fi
+	fi
+done
+
+[ -z "${csync_jails}" ] && exit 0
+
+[ "${CSYNC2_CBSD_VERBOSE}" = "1" ] && ${ECHO} "${N1_COLOR}${CBSD_APP}: csync-enabled jails: ${N2_COLOR}${csync_jails}${N0_COLOR}"
+
+if [ ! -r ${CSYNC2_CBSD_KEY} ]; then
+	${ECHO} "${N1_COLOR}${CBSD_APP}: no such csync2 key for CBSD, generated: ${N2_COLOR}${CSYNC2_CBSD_KEY}${N0_COLOR}" 1>&2
+	${CSYNC2_CMD} -k ${CSYNC2_CBSD_KEY}
+	${ECHO} "${N1_COLOR}${CBSD_APP}: please distribute: file: ${N2_COLOR}${CSYNC2_CBSD_KEY}${N0_COLOR}" 1>&2
+fi
+
+# generate temporary file
+TMPFILE=$( ${MKTEMP_CMD} )
+${CAT_CMD} > ${TMPFILE} <<EOF
+nossl * *;
+
+EOF
+
+for i in ${csync_jails}; do
+${CAT_CMD} >> ${TMPFILE} <<EOF
+group ${i}-jail
+{
+
+	key ${CSYNC2_CBSD_KEY};
+EOF
+${CAT_CMD} ${jailsysdir}/${i}/csync2.cfg >> ${TMPFILE}
+${CAT_CMD} >> ${TMPFILE} <<EOF
+	include ${jailsysdir}/${i}/csync2.cfg;
+}
+
+EOF
+done
+
+# dryrun?
+
+service_refresh=0
+
+[ -z "${DIFF_CMD}" ] && DIFF_CMD="/usr/bin/diff"
+
+if [ ! -r ${CSYNC2_CFG_FILE} ]; then
+	${MV_CMD} ${TMPFILE} ${CSYNC2_CFG_FILE}
+	service_refresh=1
+else
+	is_diff=$( ${DIFF_CMD} ${CSYNC2_CFG_FILE} ${TMPFILE} | ${GREP_CMD} . )
+	if [ -n "${is_diff}" ]; then
+		${MV_CMD} ${TMPFILE} ${CSYNC2_CFG_FILE}
+		service_refresh=1
+	else
+		${RM_CMD} -f ${TMPFILE}
+	fi
+fi
+
+if [ ${service_refresh} -eq 1 ]; then
+	${SERVICE_CMD} csync2 restart
+fi
+
+for jname in ${csync_jails}; do
+	readconf csync2.conf		# ~cbsd/jails-system/$jname/etc/ win!
+	[ -n "${overbose}" ] && CSYNC2_CBSD_VERBOSE="${overbose}"
+
+	if [ -r ${CSYNC2_CBSD_LOG_DIR}/${jname}.last ]; then
+		_last_time=$( ${GREP_CMD} . ${CSYNC2_CBSD_LOG_DIR}/${jname}.last )
+	else
+		_last_time=0
+	fi
+	_cur_time=$( ${DATE_CMD} +%s )
+
+	_interval_seconds=$(( CSYNC2_CBSD_RUN_INTERVAL * 60 ))
+
+	_diff_time=$(( _cur_time - _last_time ))
+
+	if [ ${_diff_time} -gt ${_interval_seconds} ]; then
+		[ "${CSYNC2_CBSD_VERBOSE}" = "1" ] && ${ECHO} "${N1_COLOR}${jname} interval ${CSYNC2_CBSD_RUN_INTERVAL} min: time to run, offset: ${N2_COLOR}${_diff_time}${N0_COLOR}" 1>&2
+		echo "${_cur_time}" > ${CSYNC2_CBSD_LOG_DIR}/${jname}.last
+		${LOCKF_CMD} -s -t0 /tmp/cbsd_csync2-${jname}.lock ${DAEMON_CMD} -o ${CSYNC2_CBSD_LOG_DIR}/${jname}.log ${CSYNC2_CMD} -xv -G ${jname}-jail
+	else
+		_waiting_seconds=$(( _interval_seconds - _diff_time ))
+		[ "${CSYNC2_CBSD_VERBOSE}" = "1" ] && ${ECHO} "${N1_COLOR}${jname} interval ${CSYNC2_CBSD_RUN_INTERVAL} min: waiting seconds: ${N2_COLOR}${_waiting_seconds}${N0_COLOR}" 1>&2
+	fi
+done
+
+exit 0
