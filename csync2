@@ -50,7 +50,7 @@ Module use ~cbsd/etc/csync2.conf for global settins and can be overwritten per j
 
 Please copy and edit /usr/local/cbsd/modules/csync2.d/etc/csync2.conf to ~cbsd/etc/ first.
 
-Insert into `crontab -e` csync2 executor:
+Insert into 'crontab -e' csync2 executor:
 
 * * * * * /usr/bin/lockf -s -t0 /tmp/cbsd_csync2.lock /usr/bin/env NOCOLOR=1 /usr/local/bin/cbsd csync2 >> /var/log/cbsd-csync2/csync2.log 2>&1
 
@@ -84,12 +84,20 @@ fi
 
 # read globals
 readconf csync2.conf
+
+#defaults
+[ -z "${CSYNC2_CBSD_LOG_DIR}" ] && CSYNC2_CBSD_LOG_DIR="/var/log/cbsd-csync2"
+[ -z "${CSYNC2_CBSD_KEYC}" ] && SYNC2_CBSD_KEY="/usr/local/etc/cbsd_csync2.key"
+[ -z "${CSYNC2_CMD}" ] && CSYNC2_CMD="/usr/local/sbin/csync2"
+[ -z "${CSYNC2_CFG_FILE}" ] && CSYNC2_CFG_FILE="/usr/local/etc/csync2.cfg"
+[ -z "${CSYNC2_CBSD_RUN_INTERVAL}" ] && CSYNC2_CBSD_RUN_INTERVAL="10"
+[ -z "${CSYNC2_CBSD_VERBOSE}" ] && CSYNC2_CBSD_VERBOSE=0
 [ -n "${overbose}" ] && CSYNC2_CBSD_VERBOSE="${overbose}"
 
 # should be early
 [ ! -d ${CSYNC2_CBSD_LOG_DIR} ] && ${MKDIR_CMD} -p ${CSYNC2_CBSD_LOG_DIR}
 [ ! -h "${dbdir}/local.sqlite" ] && exit 0
-[ ! -x "${CSYNC2_CMD}" ] && err 1 "${N1_COLOR}no such csync2 executable, please install first: ${N2_COLOR}pkg install -y csync2${N0_COLOR}"
+[ ! -x "${CSYNC2_CMD}" ] && err 1 "${N1_COLOR}no such csync2 executable (CSYNC2_CMD - ${CSYNC2_CMD}), please install first: ${N2_COLOR}pkg install -y csync2${N0_COLOR}"
 [ -z "${CSYNC2_CBSD_RUN_INTERVAL}" ] && CSYNC2_CBSD_RUN_INTERVAL="10"
 
 jails=$( ${miscdir}/sqlcli ${dbdir}/local.sqlite "SELECT jname FROM jails WHERE emulator = \"jail\"" )
