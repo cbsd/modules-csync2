@@ -1,7 +1,7 @@
 #!/usr/local/bin/cbsd
 # todo: frequency of csync2 per jail via ~cbsd/jails-system/<jail>/etc/csync2.conf
 MYARG=""
-MYOPTARG="verbose"
+MYOPTARG="force verbose"
 MYDESC="CBSD wrapper for csync2"
 CBSDMODULE="jail"
 ADDHELP="
@@ -56,6 +56,7 @@ Insert into 'crontab -e' csync2 executor:
 
 ${H3_COLOR}Options${N0_COLOR}:
 
+ ${N2_COLOR}force${N0_COLOR}    - set to '1' to force run csync2, ignore CSYNC2_CBSD_RUN_INTERVAL;
  ${N2_COLOR}verbose${N0_COLOR}  - set to '1' to see verbose output.
 
 ${H3_COLOR}Examples${N0_COLOR}:
@@ -68,9 +69,11 @@ URL: https://www.bsdstore.ru/en/13.0.x/wf_csync_ssi.html
 EXTHELP=
 
 . ${subr}
-
 verbose=0
 overbose=
+force=0
+oforce=
+
 . ${cbsdinit}
 if [ -n "${verbose}" ]; then
 	overbose="${verbose}"
@@ -100,6 +103,12 @@ readconf csync2.conf
 [ ! -x "${CSYNC2_CMD}" ] && err 1 "${N1_COLOR}no such csync2 executable (CSYNC2_CMD - ${CSYNC2_CMD}), please install first: ${N2_COLOR}pkg install -y csync2${N0_COLOR}"
 [ -z "${CSYNC2_CBSD_RUN_INTERVAL}" ] && CSYNC2_CBSD_RUN_INTERVAL="10"
 
+if [ ! -r ${CSYNC2_CBSD_KEY} ]; then
+	${ECHO} "${N1_COLOR}${CBSD_APP}: no such csync2 key for CBSD, generated: ${N2_COLOR}${CSYNC2_CBSD_KEY}${N0_COLOR}" 1>&2
+	${CSYNC2_CMD} -k ${CSYNC2_CBSD_KEY}
+	${ECHO} "${N1_COLOR}${CBSD_APP}: please distribute: file: ${N2_COLOR}${CSYNC2_CBSD_KEY}${N0_COLOR}" 1>&2
+fi
+
 jails=$( ${miscdir}/sqlcli ${dbdir}/local.sqlite "SELECT jname FROM jails WHERE emulator = \"jail\"" )
 csync_jails=
 
@@ -117,11 +126,6 @@ done
 
 [ "${CSYNC2_CBSD_VERBOSE}" = "1" ] && ${ECHO} "${N1_COLOR}${CBSD_APP}: csync-enabled jails: ${N2_COLOR}${csync_jails}${N0_COLOR}"
 
-if [ ! -r ${CSYNC2_CBSD_KEY} ]; then
-	${ECHO} "${N1_COLOR}${CBSD_APP}: no such csync2 key for CBSD, generated: ${N2_COLOR}${CSYNC2_CBSD_KEY}${N0_COLOR}" 1>&2
-	${CSYNC2_CMD} -k ${CSYNC2_CBSD_KEY}
-	${ECHO} "${N1_COLOR}${CBSD_APP}: please distribute: file: ${N2_COLOR}${CSYNC2_CBSD_KEY}${N0_COLOR}" 1>&2
-fi
 
 # generate temporary file
 TMPFILE=$( ${MKTEMP_CMD} )
@@ -171,25 +175,30 @@ fi
 for jname in ${csync_jails}; do
 	readconf csync2.conf		# ~cbsd/jails-system/$jname/etc/ win!
 	[ -n "${overbose}" ] && CSYNC2_CBSD_VERBOSE="${overbose}"
+	[ -n "${oforce}" ] && force="${oforce}"
 
-	if [ -r ${CSYNC2_CBSD_LOG_DIR}/${jname}.last ]; then
-		_last_time=$( ${GREP_CMD} . ${CSYNC2_CBSD_LOG_DIR}/${jname}.last )
+	if [ ${force} -eq 1 ]; then
+		${CSYNC2_CMD} -xv -G ${jname}-jail
 	else
-		_last_time=0
-	fi
-	_cur_time=$( ${DATE_CMD} +%s )
+		if [ -r ${CSYNC2_CBSD_LOG_DIR}/${jname}.last ]; then
+			_last_time=$( ${GREP_CMD} . ${CSYNC2_CBSD_LOG_DIR}/${jname}.last )
+		else
+			_last_time=0
+		fi
+		_cur_time=$( ${DATE_CMD} +%s )
 
-	_interval_seconds=$(( CSYNC2_CBSD_RUN_INTERVAL * 60 ))
+		_interval_seconds=$(( CSYNC2_CBSD_RUN_INTERVAL * 60 ))
 
-	_diff_time=$(( _cur_time - _last_time ))
+		_diff_time=$(( _cur_time - _last_time ))
 
-	if [ ${_diff_time} -gt ${_interval_seconds} ]; then
-		[ "${CSYNC2_CBSD_VERBOSE}" = "1" ] && ${ECHO} "${N1_COLOR}${jname} interval ${CSYNC2_CBSD_RUN_INTERVAL} min: time to run, offset: ${N2_COLOR}${_diff_time}${N0_COLOR}" 1>&2
-		echo "${_cur_time}" > ${CSYNC2_CBSD_LOG_DIR}/${jname}.last
-		${LOCKF_CMD} -s -t0 /tmp/cbsd_csync2-${jname}.lock ${DAEMON_CMD} -o ${CSYNC2_CBSD_LOG_DIR}/${jname}.log ${CSYNC2_CMD} -xv -G ${jname}-jail
-	else
-		_waiting_seconds=$(( _interval_seconds - _diff_time ))
-		[ "${CSYNC2_CBSD_VERBOSE}" = "1" ] && ${ECHO} "${N1_COLOR}${jname} interval ${CSYNC2_CBSD_RUN_INTERVAL} min: waiting seconds: ${N2_COLOR}${_waiting_seconds}${N0_COLOR}" 1>&2
+		if [ ${_diff_time} -gt ${_interval_seconds} ]; then
+			[ "${CSYNC2_CBSD_VERBOSE}" = "1" ] && ${ECHO} "${N1_COLOR}${jname} interval ${CSYNC2_CBSD_RUN_INTERVAL} min: time to run, offset: ${N2_COLOR}${_diff_time}${N0_COLOR}" 1>&2
+			echo "${_cur_time}" > ${CSYNC2_CBSD_LOG_DIR}/${jname}.last
+			${LOCKF_CMD} -s -t0 /tmp/cbsd_csync2-${jname}.lock ${DAEMON_CMD} -o ${CSYNC2_CBSD_LOG_DIR}/${jname}.log ${CSYNC2_CMD} -xv -G ${jname}-jail
+		else
+			_waiting_seconds=$(( _interval_seconds - _diff_time ))
+			[ "${CSYNC2_CBSD_VERBOSE}" = "1" ] && ${ECHO} "${N1_COLOR}${jname} interval ${CSYNC2_CBSD_RUN_INTERVAL} min: waiting seconds: ${N2_COLOR}${_waiting_seconds}${N0_COLOR}" 1>&2
+		fi
 	fi
 done
 
