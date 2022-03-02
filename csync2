@@ -194,7 +194,8 @@ for jname in ${csync_jails}; do
 		if [ ${_diff_time} -gt ${_interval_seconds} ]; then
 			[ "${CSYNC2_CBSD_VERBOSE}" = "1" ] && ${ECHO} "${N1_COLOR}${jname} interval ${CSYNC2_CBSD_RUN_INTERVAL} min: time to run, offset: ${N2_COLOR}${_diff_time}${N0_COLOR}" 1>&2
 			echo "${_cur_time}" > ${CSYNC2_CBSD_LOG_DIR}/${jname}.last
-			${LOCKF_CMD} -s -t0 /tmp/cbsd_csync2-${jname}.lock ${DAEMON_CMD} -o ${CSYNC2_CBSD_LOG_DIR}/${jname}.log ${CSYNC2_CMD} -xv -G ${jname}-jail
+			echo "${DAEMON_CMD} -o ${CSYNC2_CBSD_LOG_DIR}/${jname}.log ${LOCKF_CMD} -s -t0 /tmp/cbsd_csync2-${jname}.lock ${CSYNC2_CMD} -xv -G ${jname}-jail"
+			${DAEMON_CMD} -o ${CSYNC2_CBSD_LOG_DIR}/${jname}.log ${LOCKF_CMD} -s -t0 /tmp/cbsd_csync2-${jname}.lock ${CSYNC2_CMD} -xv -G ${jname}-jail
 		else
 			_waiting_seconds=$(( _interval_seconds - _diff_time ))
 			[ "${CSYNC2_CBSD_VERBOSE}" = "1" ] && ${ECHO} "${N1_COLOR}${jname} interval ${CSYNC2_CBSD_RUN_INTERVAL} min: waiting seconds: ${N2_COLOR}${_waiting_seconds}${N0_COLOR}" 1>&2
