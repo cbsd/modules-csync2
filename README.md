@@ -14,4 +14,4 @@ Add rotate rules /etc/newsyslog.conf.d/cbsd-csync2.conf:
 
 /var/log/cbsd-csync2/*.log                     640  3     1000 *     JC
 
-  Refer to the documentation page: https://www.bsdstore.ru/en/13.x/wf_csync2_ssi.html
+  Refer to the documentation page: https://www.bsdstore.ru/en/13.0.x/modules/csync2.d_ssi.html
