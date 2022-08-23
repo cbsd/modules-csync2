@@ -122,7 +122,12 @@ for i in ${jails}; do
 	fi
 done
 
-[ -z "${csync_jails}" ] && exit 0
+if [ -z "${csync_jails}" ]; then
+	if [ "${CSYNC2_CBSD_VERBOSE}" = "1" ]; then
+		${ECHO} "${N1_COLOR}${CBSD_APP}: csync2-module-based jails not found: check csync2.cfg existance: ${N2_COLOR}${jailsysdir}/\${jname}/csync2.cfg${N0_COLOR}"
+	fi
+	exit 0
+fi
 
 [ "${CSYNC2_CBSD_VERBOSE}" = "1" ] && ${ECHO} "${N1_COLOR}${CBSD_APP}: csync-enabled jails: ${N2_COLOR}${csync_jails}${N0_COLOR}"
 
