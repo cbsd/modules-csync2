@@ -109,7 +109,7 @@ if [ ! -r ${CSYNC2_CBSD_KEY} ]; then
 	${ECHO} "${N1_COLOR}${CBSD_APP}: please distribute: file: ${N2_COLOR}${CSYNC2_CBSD_KEY}${N0_COLOR}" 1>&2
 fi
 
-jails=$( ${miscdir}/sqlcli ${dbdir}/local.sqlite "SELECT jname FROM jails WHERE emulator = \"jail\"" )
+jails=$( ${miscdir}/sqlcli ${dbdir}/local.sqlite "SELECT jname FROM jails WHERE emulator = 'jail'" )
 csync_jails=
 
 for i in ${jails}; do
